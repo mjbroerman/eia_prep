@@ -1,0 +1,112 @@
+---
+title: "EIA Data Preparation"
+author: "Matt Broerman"
+date: "10/27/2020"
+output: html_document
+---
+
+# How natural gas consumed in Pennslyvania?
+
+Today I am going to prepare a couple of sample timeseries datasets for an upcoming project. I currently live in Pittsburgh, and I saw ![this story](https://www.post-gazette.com/business/powersource/2020/09/15/Pennsylvania-carbon-emissions-budget-RGGI-power-plants-advances-EQB/stories/202009150121) about the governor's plan to cap carbon emissions from power plants. How will this effect production in the region? Will this have any effect on local rates? Fortunately, the Energy Information Administration (EIA) provides a ![public API](https://www.eia.gov/opendata/register.php). 
+
+
+```{r setup}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(eia)
+
+eia_set_key(Sys.getenv("EIA_API_KEY"))
+```
+
+## Note about APIs and the R Ecosystem
+
+I have found that R ecosystem has well-maintain packages for interacting with government data APIs--for instance, ![tidycensus](https://github.com/walkerke/tidycensus) for US Census data and the ROpenSci package ![eia](https://github.com/ropensci/eia) for the Energy Information Agency data. Having a well-designed API wrapper for sifting through public datasets is yeoman's work and deeply appreciated. Both of these implement an interface using tidyverse concepts, like modified dataframes called tibbles and a suite of considered (and often changing!) data-wrangling functions. Hadley Wickham has a line somewhere that the tidyverse tries to solve the most common analysis bottlenecks, which are more analyst-centered than compute-centered. This is nowhere more true than when working with new APIs, so using API wrappers with tidyverse concepts is a huge help. 
+
+## Navigating the API
+
+Here, we can step through a directory tree with ```eia_cats()```. It returns an object containing two tibbles: one represents the parent directory, and one represents either child directories or child datasets.
+
+
+```{r nav}
+# navigating the tree
+
+# root directory
+eia_cats()
+
+# descend to natural gas production
+eia_cats()
+eia_cats()
+
+
+
+# plants for state id
+st_plt <- eia_cats(1017)
+st_plt_ids <- st_plt$childcategories
+st_plt_ids
+# all PA 'plants'
+pa_plt <- eia_cats(902969)
+pa_plt_ids <- pa_plt$childcategories
+eia_cats(902969)
+eia_cats(2668)
+
+```
+
+```{r plant_prod_nav}
+eia_cats(2668)
+id_prod <- c("ELEC.PLANT.GEN.3096-ALL-ALL.M")
+xs <- eia_series(id_prod)
+xs
+```
+```{r plant_prod_plot}
+
+
+select(xs, units, data) %>% unnest(cols = data) %>%
+  ggplot(aes(date, value)) + geom_line() +
+  labs(y = xs$units[1], title = "Brunot Island Plant Generation, All fuels")
+
+xs$data %>% count(month)
+```
+```{r plant_prod_comp}
+eia_cats(2668)
+id_prod <- c("ELEC.PLANT.GEN.3096-ALL-ALL.M", "ELEC.PLANT.GEN.3096-NG-ALL.M", "ELEC.PLANT.GEN.3096-DFO-ALL.M")
+x <- eia_series(id_prod)
+# ids <- x$series_id
+x$series_id <- c("all", "nat_gas", "oil")
+
+
+select(x, series_id, data) %>% 
+  unnest(cols = data) %>% 
+  # pivot_wider(names_from = series_id, values_from = value) %>% 
+  ggplot(aes(date, value, color = series_id)) +
+  geom_line() +
+  labs(y = "Megawatt Hours", title = "Brunot Island Plant Generation")
+
+  
+```
+
+
+```{r load}
+id <- c("ELEC.GEN.ALL-99.M") # monthly
+region <- c("USA-CA", "USA-NY")
+x <- eia_geoset(id, region, start = "201801", end = "201812")
+x$data
+```
+Now let's plot that.
+```{r plot}
+unnest(x, cols = data) %>%
+  ggplot(aes(date, value, color = region)) +
+  geom_line() +
+  labs(y = x$units[1], title = "Net electricity generation, all fuels")
+```
+
+
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
